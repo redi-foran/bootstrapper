@@ -1,0 +1,11 @@
+[
+    {
+        "environment": "dev",
+        "dataCenter": "AM3",
+        "application": "HTA3",
+        "stripe": "sequencer",
+        "instance": "primary",
+        "commonDirectory": "",
+        "overridesDirectory": ""
+    }
+]
