@@ -53,8 +53,8 @@ class JavaCommandBuilder(CommandBuilder):
             self.add_argument(jvm_argument)
 
     def _build_platform_arguments(self, platform_configuration):
-        for (key, value) in platform_configuration.items():
-            self.add_argument("-Dplatform.%s=%s", str(key), str(value))
+        for key in sorted(platform_configuration.keys()):
+            self.add_argument("-Dplatform.%s=%s", str(key), str(platform_configuration[key]))
 
     def _build_text_admin_argument(self, text_admin_port):
         self.add_argument("-Dtextadmin.listenPort=%d", text_admin_port)
