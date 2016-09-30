@@ -11,13 +11,13 @@ class CommandBuilder(metaclass=ABCMeta):
     def command(self):
         raise NotImplemented()
 
-    def build(self, configuration):
+    def build(self, deployment):
         self._result = ""
-        self.do_build(configuration)
+        self.do_build(deployment)
         return self
 
     @abstractmethod
-    def do_build(self, configuration):
+    def do_build(self, deployment):
         raise NotImplemented()
 
     def add_argument(self, string_format, *format_values):
@@ -29,7 +29,8 @@ class JavaCommandBuilder(CommandBuilder):
     def command(self):
         return "java"
 
-    def do_build(self, configuration):
+    def do_build(self, deployment):
+        configuration = deployment.get_jvm_configuration()
         self._build_memory_arguments(configuration.min_heap, configuration.max_heap)
         self._build_base_jvm_arguments(configuration.base_jvm_configuration)
         self._build_platform_arguments(configuration.platform_configuration)
@@ -90,15 +91,53 @@ class JavaCommandBuilder(CommandBuilder):
 
 
 class DockerCommandBuilder(CommandBuilder):
+    def __init__(self, image, version=''):
+        self._image = image
+        self._version = version
+
+    @property
+    def image(self):
+        return self._image
+
+    @property
+    def version(self):
+        return self._version
+
     @property
     def command(self):
         return "docker run"
 
     def do_build(self, deployment):
-        pass
+        configuration = deployment.get_docker_container_configuration()
+        self._build_working_directory(deployment.stripe, deployment.application, deployment.instance)
+        self._build_image_name(deployment.stripe, deployment.application, deployment.instance)
+        self._build_ports(deployment.ports)
+        self._build_volumes(deployment.volumes)
+        self._build_image()
 
-    def _build_working_directory(self, stripe, application):
-        self.add_argument("--workdir %s", os.join("var", "redi", "runtime", application, stripe))
+    def _build_working_directory(self, stripe, application, instance):
+        self.add_argument("--workdir %s", os.join("var", "redi", "runtime", application, stripe, instance))
+
+    def _build_image_name(self, stripe, application, instance):
+        self.add_argument("--name %s-%s-%s", stripe, application, instance)
+        self.add_argument("--restart always")
+
+    def _build_ports(self, ports):
+        for port in ports:
+            if isinstance(port, dict):
+                self.add_argument("--publish %d:%d", port['host'], port['container'])
+            else:
+                self.add_argument("--publish %d", port)
+
+    def _build_volumes(self, volumes):
+        for volume in volumes:
+            self.add_argument("--volume %s:%s", volume['host'], volume['container'])
+
+    def _build_image(self):
+        if self.version:
+            self.add_argument("%s:%s", self.image, self.version)
+        else:
+            self.add_argument(self.image)
 
 
 if __name__ == "__main__":

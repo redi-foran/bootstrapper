@@ -3,7 +3,7 @@ from shutil import rmtree, ignore_patterns
 import os
 import json
 import stat
-from .configuration import JvmConfiguration
+from .configuration import JvmConfiguration, DockerContainerConfiguration
 from .properties import Properties, RAISE_ON_EXISTING, INSERT
 from .utils import copytree
 from .commands import JavaCommandBuilder
@@ -80,12 +80,19 @@ class Deployment(object):
     def start_script_file(self):
         return join(self.output_directory, 'scripts', 'start_jvm.sh')
 
-    def get_configuration(self):
-        configuration = JvmConfiguration({"vmArgs": {"appName": self.stripe}})
+    def _get_expanded_configuration(self, configuration):
         for filename in [join(self.common_directory, 'common_params.json'), join(self.overrides_directory, 'app_params.json')]:
             with open(filename, 'r') as json_file:
                 configuration = configuration.merge_with(json.load(json_file))
         return configuration.apply_properties(self.properties)
+
+    def get_jvm_configuration(self):
+        configuration = JvmConfiguration()
+        return self._get_expanded_configuration(configuration)
+
+    def get_docker_container_configuration(self):
+        configuration = DockerContainerConfiguration()
+        return self._get_expanded_configuration(configuration)
 
     def create(self):
         self._clean_output_directory()
@@ -124,24 +131,8 @@ class Deployment(object):
         if not isdir(join(self.output_directory, 'scripts')):
             os.makedirs(join(self.output_directory, 'scripts'))
         command = JavaCommandBuilder()
-        command.build(self.get_configuration())
+        command.build(self)
         with open(self.start_script_file, 'w') as f:
             f.write('#!/bin/sh\n')
             f.write(str(command))
         os.chmod(self.start_script_file, stat.S_IXUSR | os.stat(self.start_script_file).st_mode)
-
-
-def get_deployments_from(json_filename):
-    with open(json_filename, 'r') as json_file:
-        for obj in json.load(json_file):
-            yield Deployment(**obj)
-
-
-
-if __name__ == "__main__":
-    from configuration import JvmConfiguration
-    configuration = JvmConfiguration({'vmArgs': {'remoteDebug': {'args': '-agentlib:jdwp=transport=dt_socket,server=y,suspend=n', 'enabled': True}, 'connections': {'status': 'pulse://239.100.103.13:18013?ifName=lo', 'discovery': 'discovery://239.100.103.14:18014?ifName=lo'}, 'textAdmin': 1501, 'log': {'syslog': {'enabled': False}, 'udp': {'enabled': 'True', 'target': '10.160.10.182', 'port': 9475}, 'console': {'enabled': True}, 'file': {'enabled': False, 'target': 'messages.log'}}, 'platform': {'logPath': 'logs', 'configPath': 'config', 'dataPath': 'data'}, 'appName': 'OMS01-enrichment-agent', 'memory': {'minHeap': '2g', 'maxHeap': '3g'}, 'baseArgs': ['-server', '-XX:+UseCompressedOops', '-XX:+UseG1GC', '-XX:MaxGCPauseMillis=100', '-verbose:gc']}})
-    print("configuration=", str(type(configuration)))
-    for deployment in get_deployments_from('deployments.json'):
-        print(str(deployment))
-        deployment.create(configuration)

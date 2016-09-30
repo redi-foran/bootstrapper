@@ -57,12 +57,16 @@ class Configuration(dict):
     def merge_with(self, other):
         result = self.__class__(self)
         _merge_dict(result, other)
+        result._remove_unwanted_settings()
         return result
 
     def apply_properties(self, properties):
         result = self.__class__(self)
         _apply_properties_to_dict(result, properties)
         return result
+
+    def _remove_unwanted_settings(self):
+        pass
 
 
 class JvmConfiguration(Configuration):
@@ -120,9 +124,29 @@ class JvmConfiguration(Configuration):
             return {'args': remote_debug_config['args'], 'port': int(remote_debug_config.get('port', self.text_admin_port + 1000))}
         return {}
 
+    def _remove_unwanted_settings(self):
+        for key in self.keys():
+            if key not in ['appType', 'vmArgs']:
+                del self[key]
+
 
 class DockerContainerConfiguration(Configuration):
-    pass
+    @property
+    def _docker_container(self):
+        return self['dockerContainer']
+
+    @property
+    def volumes(self):
+        return self._docker_container.get('volumes', [])
+
+    @property
+    def ports(self):
+        return self._docker_container.get('ports', [])
+
+    def _remove_unwanted_settings(self):
+        for key in self.keys():
+            if key not in ['dockerContainer']:
+                del self[key]
 
 
 if __name__ == "__main__":
