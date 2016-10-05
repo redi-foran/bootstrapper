@@ -3,8 +3,8 @@ import socket
 DATA_CENTER_TABLE = {
         'c1': 'AM1',
         's2': 'AM2',
-        'a1': 'AW1',
-        'a2': 'AW2',
+        'a1': 'AM1',
+        'a2': 'AM2',
         'l1': 'EM1',
         'l2': 'EM2',
         'h1': 'AP1',

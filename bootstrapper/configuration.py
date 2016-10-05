@@ -1,6 +1,9 @@
 import copy
 
 
+_DEFAULT_PLATFORM_START_SCRIPT_FILENAME = 'start_platform_jvm.sh'
+
+
 def _apply_properties_to_dict(result, properties):
     for (name, value) in result.items():
         name = _clean_name(name, result, properties)
@@ -66,10 +69,16 @@ class Configuration(dict):
         return result
 
     def _remove_unwanted_settings(self):
-        pass
+        all_keys = self._get_known_keys()
+        for key in all_keys:
+            if key not in self._get_known_keys():
+                del self[key]
+
+    def _get_known_keys(self):
+        return []
 
 
-class JvmConfiguration(Configuration):
+class PlatformJvmConfiguration(Configuration):
     @property
     def vm_configuration(self):
         return self['vmArgs']
@@ -124,16 +133,18 @@ class JvmConfiguration(Configuration):
             return {'args': remote_debug_config['args'], 'port': int(remote_debug_config.get('port', self.text_admin_port + 1000))}
         return {}
 
-    def _remove_unwanted_settings(self):
-        for key in self.keys():
-            if key not in ['appType', 'vmArgs']:
-                del self[key]
+    @property
+    def start_script_filename(self):
+        return self.get('start_script_filename', _DEFAULT_PLATFORM_START_SCRIPT_FILENAME)
+
+    def _get_known_keys(self):
+        return ['vmArgs', 'appName', 'start_script_filename']
 
 
 class DockerContainerConfiguration(Configuration):
     @property
     def _docker_container(self):
-        return self['dockerContainer']
+        return self.get('dockerContainer', {})
 
     @property
     def volumes(self):
@@ -143,10 +154,12 @@ class DockerContainerConfiguration(Configuration):
     def ports(self):
         return self._docker_container.get('ports', [])
 
-    def _remove_unwanted_settings(self):
-        for key in self.keys():
-            if key not in ['dockerContainer']:
-                del self[key]
+    @property
+    def start_script_filename(self):
+        return self.get('start_script_filename', _DEFAULT_PLATFORM_START_SCRIPT_FILENAME)
+
+    def _get_known_keys(self):
+        return ['dockerContainer', 'start_script_filename']
 
 
 if __name__ == "__main__":

@@ -1,19 +1,42 @@
 from abc import ABCMeta, abstractmethod
+from contextlib import contextmanager
 import os
+import stat
+import subprocess
+import shlex
+
+
+@contextmanager
+def run_in_directory(directory):
+    current_directory = os.getcwd()
+    os.chdir(directory)
+    try:
+        yield
+    finally:
+        os.chdir(current_directory)
 
 
 class CommandBuilder(metaclass=ABCMeta):
     def __str__(self):
-        return "%s%s" % (self.command, self._result)
+        return self.command
 
     @property
     @abstractmethod
-    def command(self):
+    def executable(self):
         raise NotImplemented()
 
-    def build(self, deployment):
-        self._result = ""
-        self.do_build(deployment)
+    @property
+    @abstractmethod
+    def start_script_filename(self):
+        raise NotImplemented()
+
+    @property
+    def command(self):
+        return shlex.split(self.executable) + self._arguments
+
+    def build(self, deployment, write_to_file=True):
+        self._arguments = []
+        self.do_build(deployment, write_to_file)
         return self
 
     @abstractmethod
@@ -21,16 +44,41 @@ class CommandBuilder(metaclass=ABCMeta):
         raise NotImplemented()
 
     def add_argument(self, string_format, *format_values):
-        self._result += " \\\n\t" + (string_format % format_values)
+        self._arguments += [x.strip() for x in shlex.split(string_format % format_values) if len(x.strip()) > 0]
+
+    def _write_script_to_file(self, deployment, script_filename, *extra_commands):
+        scripts_directory = os.path.join(deployment.output_directory, 'scripts')
+        script_filename = os.path.join(scripts_directory, script_filename)
+        if not os.path.isdir(scripts_directory):
+            os.makedirs(scripts_directory)
+        with open(script_filename, 'w') as f:
+            f.write('#!/bin/sh\n')
+            for cmd in extra_commands:
+                f.write("%s\n" % cmd)
+            f.write(" \\n\t".join(self.command))
+        os.chmod(script_filename, stat.S_IXUSR | os.stat(script_filename).st_mode)
+
+    @abstractmethod
+    def execute(self, runner):
+        raise NotImplemented()
+
+    def _do_execute(self, command):
+        print("Running:", " ".join(command))
+        return subprocess.run(command, stderr=subprocess.STDOUT)
 
 
-class JavaCommandBuilder(CommandBuilder):
+class PlatformCommandBuilder(CommandBuilder):
     @property
-    def command(self):
+    def executable(self):
         return "java"
 
-    def do_build(self, deployment):
-        configuration = deployment.get_jvm_configuration()
+    @property
+    def start_script_filename(self):
+        return self._start_script_filename
+
+    def do_build(self, deployment, write_to_file):
+        configuration = deployment.platform_configuration
+        self._start_script_filename = configuration.start_script_filename
         self._build_memory_arguments(configuration.min_heap, configuration.max_heap)
         self._build_base_jvm_arguments(configuration.base_jvm_configuration)
         self._build_platform_arguments(configuration.platform_configuration)
@@ -40,7 +88,8 @@ class JavaCommandBuilder(CommandBuilder):
         self._build_remote_debug_arguments(configuration.remote_debug_configuration)
         self._build_package_scanner_argument()
         self._build_application_name_argument(configuration.application_name)
-        return self
+        if write_to_file:
+            self._write_script_to_file(deployment, configuration.start_script_filename)
 
 
     def _build_memory_arguments(self, min_heap, max_heap):
@@ -89,38 +138,36 @@ class JavaCommandBuilder(CommandBuilder):
         self.add_argument("com.redi.platform.launcher.application.LauncherMain")
         self.add_argument("%s.commands", application_name)
 
+    def execute(self, runner):
+        return self._do_execute(self.command)
+
 
 class DockerCommandBuilder(CommandBuilder):
-    def __init__(self, image, version=''):
-        self._image = image
-        self._version = version
-
     @property
-    def image(self):
-        return self._image
-
-    @property
-    def version(self):
-        return self._version
-
-    @property
-    def command(self):
+    def executable(self):
         return "docker run"
 
-    def do_build(self, deployment):
-        configuration = deployment.get_docker_container_configuration()
-        self._build_working_directory(deployment.stripe, deployment.application, deployment.instance)
-        self._build_image_name(deployment.stripe, deployment.application, deployment.instance)
-        self._build_ports(deployment.ports)
-        self._build_volumes(deployment.volumes)
-        self._build_image()
+    @property
+    def start_script_filename(self):
+        return self._start_script_filename
 
-    def _build_working_directory(self, stripe, application, instance):
-        self.add_argument("--workdir %s", os.join("var", "redi", "runtime", application, stripe, instance))
+    def do_build(self, deployment, write_to_file):
+        configuration = deployment.docker_container_configuration
+        self._start_script_filename = configuration.start_script_filename
+        self._build_working_directory(deployment.run_directory)
+        self._build_image_name(deployment.stripe, deployment.application, deployment.instance)
+        self._build_ports(configuration.ports)
+        self._build_volumes(configuration.volumes)
+
+    def _build_working_directory(self, run_directory):
+        index = run_directory.find(os.getcwd())
+        if index >= 0:
+            run_directory = run_directory[len(os.getcwd()):]
+        self.add_argument("--workdir %s", run_directory)
 
     def _build_image_name(self, stripe, application, instance):
-        self.add_argument("--name %s-%s-%s", stripe, application, instance)
-        self.add_argument("--restart always")
+        self.add_argument("--rm")
+        self.add_argument("--name %s-%s-%s", application, stripe, instance)
 
     def _build_ports(self, ports):
         for port in ports:
@@ -133,16 +180,19 @@ class DockerCommandBuilder(CommandBuilder):
         for volume in volumes:
             self.add_argument("--volume %s:%s", volume['host'], volume['container'])
 
-    def _build_image(self):
-        if self.version:
-            self.add_argument("%s:%s", self.image, self.version)
-        else:
-            self.add_argument(self.image)
+    def execute(self, runner):
+        image = "%s:%s" % (runner.version_info['image_name'], runner.version_info['image_version'])
+        self._pull_docker_image(image)
+        with run_in_directory(runner.deployment.run_directory):
+            return self._do_execute(self.command + [image, os.path.join('scripts', self.start_script_filename)])
+
+    def _pull_docker_image(self, image):
+        return subprocess.run(['docker', 'pull', image], stderr=subprocess.STDOUT)
 
 
 if __name__ == "__main__":
     from configuration import Configuration
-    javaBuilder = JavaCommandBuilder()
+    javaBuilder = PlatformCommandBuilder()
     configuration = Configuration({'vmArgs': {'remoteDebug': {'args': '-agentlib:jdwp=transport=dt_socket,server=y,suspend=n', 'enabled': True}, 'connections': {'status': 'pulse://239.100.103.13:18013?ifName=lo', 'discovery': 'discovery://239.100.103.14:18014?ifName=lo'}, 'textAdmin': 1501, 'log': {'syslog': {'enabled': False}, 'udp': {'enabled': 'True', 'target': '10.160.10.182', 'port': 9475}, 'console': {'enabled': True}, 'file': {'enabled': False, 'target': 'messages.log'}}, 'platform': {'logPath': 'logs', 'configPath': 'config', 'dataPath': 'data'}, 'appName': 'OMS01-enrichment-agent', 'memory': {'minHeap': '2g', 'maxHeap': '3g'}, 'baseArgs': ['-server', '-XX:+UseCompressedOops', '-XX:+UseG1GC', '-XX:MaxGCPauseMillis=100', '-verbose:gc']}})
     javaBuilder.build(configuration)
     print(javaBuilder)
