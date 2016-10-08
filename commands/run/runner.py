@@ -1,4 +1,4 @@
-from bootstrapper import Location, ENVIRONMENT_TABLE, DATA_CENTER_TABLE, DockerCommandBuilder, PlatformCommandBuilder
+from bootstrapper import Location, ENVIRONMENT_TABLE, DATA_CENTER_TABLE, DockerCommandBuilder, PlatformCommandBuilder, RUN_DIRECTORY_KEY
 import os
 import subprocess
 import shutil
@@ -8,9 +8,27 @@ import tarfile
 import http.client
 import urllib.parse
 import urllib.request
+import json
+import socket
 
 _DOCKER_CONTAINER = 'docker-container'
 _PLATFORM_JVM = 'platform-jvm'
+
+
+def _get_local_ip_address(netinfo_url):
+    parts = urllib.parse.urlparse(netinfo_url, 'http')
+    port = 80
+    if parts.port is None:
+        if parts.scheme == 'https':
+            port = 443
+    else:
+        port = parts.port
+    s = socket.socket()
+    try:
+        s.connect((parts.hostname, port))
+        return s.getsockname()[0]
+    finally:
+        s.close()
 
 
 def _find_deployment(deployments, location, application, stripe, instance):
@@ -23,20 +41,6 @@ def _find_deployment(deployments, location, application, stripe, instance):
                     return deployment
     return None
 
-def _get_location(args):
-    if hasattr(args, 'environment') and hasattr(args, 'data_center'):
-        return Location(environment=args.environment, data_center=args.data_center)
-    elif hasattr(args, 'hostname'):
-        return Location(hostname=args.hostname)
-
-
-def _run_docker_container(deployment, version_info):
-    print("Running", os.path.join(deployment.run_directory, 'start_docker_container.sh'))
-
-
-def _platform_jvm(deployment, version_info):
-    print("Running", os.path.join(deployment.run_directory, 'start_platform_jvm.sh'))
-
 
 @contextmanager
 def _change_directory(directory):
@@ -48,7 +52,7 @@ def _change_directory(directory):
         os.chdir(current_dir)
 
 
-START_CALLBACKS = {
+COMMAND_BUILDERS = {
         _DOCKER_CONTAINER: DockerCommandBuilder,
         _PLATFORM_JVM: PlatformCommandBuilder }
 
@@ -59,6 +63,7 @@ class DeploymentRunner(object):
 
     def run(self, args):
         self._args = args
+        self._determine_location()
         self._pull_version_info()
         with TemporaryDirectory() as self._source_directory_base:
             self._pull_configuration()
@@ -67,9 +72,36 @@ class DeploymentRunner(object):
             self._populate_run_directory()
         result = self._execute()
 
+    def _determine_location(self):
+        hostname = getattr(self._args, 'hostname', None)
+        if hostname is None:
+            environment = getattr(self._args, 'environment', None)
+            data_center = getattr(self._args, 'data_center', None)
+            if environment is None or data_center is None:
+                local_ip_address = _get_local_ip_address(self._args.netinfo_url)
+                url = "%s/netinfo/ip/%s" % (self._args.netinfo_url, local_ip_address)
+                with urllib.request.urlopen(url) as response:
+                    netinfo = json.loads(response.read().decode('utf-8'))['netinfo']
+                    if isinstance(netinfo, str):
+                        print(netinfo, "Defaulting to environment=dev, data_center=AM1")
+                        environment = 'dev'
+                        data_center = 'AM1'
+                    else:
+                        environment = netinfo.get('state', 'dev').lower()
+                        if environment == 'uat':
+                            environment = 'qa'
+                        data_center = "%s%d" % (netinfo.get('region', 'AM'), netinfo.get('region_side', 1))
+            self._location = Location(environment=environment, data_center=data_center)
+        else:
+            self._location = Location(hostname=self._args.hostname)
+
     @property
-    def _run_directory(self):
-        return self.deployment.run_directory
+    def location(self):
+        return self._location
+
+    @property
+    def run_directory(self):
+        return os.path.join(self.deployment.properties.get(RUN_DIRECTORY_KEY, os.path.join(os.sep, 'var', 'redi', 'runtime')), self._args.application, self._args.stripe, self._args.instance)
 
     @property
     def _source_directory(self):
@@ -84,42 +116,38 @@ class DeploymentRunner(object):
         return self._version_info
 
     def _remove_stale_paths(self):
-        for path in os.listdir(self._run_directory):
+        for path in os.listdir(self.run_directory):
             if path in ['logs', 'data']:
                 continue
-            full_pathname = os.path.join(self._run_directory, path)
+            full_pathname = os.path.join(self.run_directory, path)
             if os.path.isdir(full_pathname):
                 shutil.rmtree(full_pathname)
             else:
                 os.remove(full_pathname)
 
     def _generate_run_directory(self):
-        if os.path.isdir(self._run_directory):
+        if os.path.isdir(self.run_directory):
             self._remove_stale_paths()
         else:
-            os.makedirs(self._run_directory)
+            os.makedirs(self.run_directory)
 
     def _populate_run_directory(self):
         for path in os.listdir(self._source_directory):
             source_pathname = os.path.join(self._source_directory, path)
-            target_pathname = os.path.join(self._run_directory, path)
+            target_pathname = os.path.join(self.run_directory, path)
             if os.path.isdir(source_pathname):
                 shutil.copytree(source_pathname, target_pathname)
             else:
                 shutil.copy(source_pathname, target_pathname)
 
+    @property
+    def _version_url(self):
+        return "%s/versions/%s/%s/%s/%s/%s.json" % (self._args.versions_url,
+                self.location.environment, self.location.data_center, self._args.application, self._args.stripe, self._args.instance)
+
     def _pull_version_info(self):
         with urllib.request.urlopen(self._version_url) as response:
-            
-
-        self._version_info = {
-                'image_name': 'rediforan/img-redi-centos',
-                'image_version': 'latest',
-                'artifact_package': 'com.redi.oms',
-                'artifact_name': 'historic-data',
-                'artifact_version': '0.1.0',
-                'git_repository': 'git@github.com:redi-foran/config-historic-stream.git',
-                'configuration_version': 'latest'}
+            self._version_info = json.loads(response.read().decode('utf-8'))
 
     @property
     def _should_validate(self):
@@ -141,9 +169,12 @@ class DeploymentRunner(object):
 
     @property
     def _artifact_url(self):
-        return "http://artifactory.rdti.com:80/artifactory/libs-snapshot-local/com/redi/oms/legacyPublishing/LATEST-SNAPSHOT/legacyPublishing-LATEST-SNAPSHOT-release.tar"
+        return self.version_info['artifact_uri']
 
     def _pull_package(self):
+        if self._artifact_url is None:
+            raise KeyError("Could not find artifact uri for package=%s, name=%s, version=%s" %
+                    (self.version_info['artifact_package'], self.version_info['artifact_name'], self.version_info['artifact_version']))
         with urllib.request.urlopen(self._artifact_url) as response, TemporaryFile(mode='w+b', suffix='tar') as f:
             f.write(response.read())
             f.seek(0)
@@ -153,9 +184,9 @@ class DeploymentRunner(object):
 
     def _extract_member(self, tar, tar_member, directory):
         index = tar_member.name.find('/')
-        # Safety: Do not extract anything beginning '/'
+        # Safety: Do not extract anything beginning with '/'
         if index > 0:
-            target = os.path.join(self._run_directory, tar_member.name[index + 1:])
+            target = os.path.join(self.run_directory, tar_member.name[index + 1:])
             if tar_member.isdir() and not os.path.isdir(target):
                 os.makedirs(target)
             elif tar_member.isfile() and not os.path.exists(target):
@@ -167,8 +198,8 @@ class DeploymentRunner(object):
         with _change_directory(self._source_directory_base):
             self._switch_configuration_to_version()
             self._obtain_deployment()
-            if not self._use_local_configuration and self._should_validate:
-                self._validate_configuration()
+            self._build_deployment()
+            self._validate_configuration()
 
     def _clone_configuration(self):
         if self._use_local_configuration:
@@ -186,21 +217,24 @@ class DeploymentRunner(object):
                 subprocess.run(['git', 'checkout', self._configuration_version], stderr=subprocess.STDOUT)
 
     def _obtain_deployment(self):
-        location = _get_location(self._args)
-        self.deployment = _find_deployment(self._load_deployments(self._source_directory_base), location, self._args.application, self._args.stripe, self._args.instance)
+        self.deployment = _find_deployment(self._load_deployments(self._source_directory_base), self.location, self._args.application, self._args.stripe, self._args.instance)
         if self.deployment is None:
             raise KeyError("Failed to find deployment for environment=%s, data center=%s, application=%s, stripe=%s, instance=%s" %
-                    (location.environment, location.data_center, self._args.application, self._args.stripe, self._args.instance))
+                    (self.location.environment, self.location.data_center, self._args.application, self._args.stripe, self._args.instance))
         self.deployment.load_configurations()
 
-    def _validate_configuration(self):
-        shutil.rmtree(os.path.join(self._source_directory_base, 'deployments'))
+    def _build_deployment(self):
+        if os.path.isdir('deployments'):
+            shutil.rmtree('deployments')
         self.deployment.create()
-        result = subprocess.run(['git', 'status', '--porcelain', self._source_directory_specific], stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
-        if len(result.stdout) > 0:
-            raise AssertionError("Configuration validation has failed because the following files are not the same as versioned:\n%s" % result.stdout)
+
+    def _validate_configuration(self):
+        if not self._use_local_configuration and self._should_validate:
+            result = subprocess.run(['git', 'status', '--porcelain', self._source_directory_specific], stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+            if len(result.stdout) > 0:
+                raise AssertionError("Configuration validation has failed because the following files are not the same as versioned:\n%s" % result.stdout)
 
     def _execute(self):
-        command_builder = START_CALLBACKS[self._args.mode]()
+        command_builder = COMMAND_BUILDERS[self._args.mode]()
         command_builder.build(self.deployment, write_to_file=False)
         return command_builder.execute(self)

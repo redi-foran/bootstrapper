@@ -53,3 +53,6 @@ def add_commands(command_parser):
 
     from .run import add_command as add_run_command
     add_run_command(command_parser.add_parser('run', help='Executes a deployment'), _load_deployments)
+
+    from .stop import add_command as add_stop_command
+    add_stop_command(command_parser.add_parser('stop', help='Stops a running process'), _load_deployments)

@@ -14,7 +14,6 @@ DATA_CENTER_KEY='DATA_CENTER'
 APPLICATION_KEY='APPLICATION'
 STRIPE_KEY='STRIPE'
 INSTANCE_KEY='INSTANCE'
-RUN_DIRECTORY_KEY='RUN_DIRECTORY_BASE'
 
 
 def _build_properties_from_files(properties, filenames, common_directory):
@@ -77,11 +76,6 @@ class Deployment(object):
     @property
     def output_directory(self):
         return join(os.path.abspath(os.getcwd()), "deployments", self.environment, self.data_center, self.application, self.stripe, self.instance)
-
-    @property
-    def run_directory(self):
-        #return os.path.join(self.properties.get(RUN_DIRECTORY_KEY, os.path.join(os.sep, 'var', 'redi', 'runtime')), self.application, self.stripe, self.instance)
-        return os.path.join(self.properties.get(RUN_DIRECTORY_KEY, os.path.join(os.getcwd(), 'var', 'redi', 'runtime')), self.application, self.stripe, self.instance)
 
     def _get_expanded_configuration(self, configuration):
         for filename in [join(self.common_directory, 'common_params.json'), join(self.overrides_directory, 'app_params.json')]:

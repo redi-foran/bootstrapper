@@ -55,7 +55,9 @@ class CommandBuilder(metaclass=ABCMeta):
             f.write('#!/bin/sh\n')
             for cmd in extra_commands:
                 f.write("%s\n" % cmd)
-            f.write(" \\n\t".join(self.command))
+            cmd = " ".join(self.command)
+            f.write('echo "%s"\n' % cmd.translate({'"': r'\"', '$': r'\$' }))
+            f.write(cmd)
         os.chmod(script_filename, stat.S_IXUSR | os.stat(script_filename).st_mode)
 
     @abstractmethod
@@ -89,7 +91,7 @@ class PlatformCommandBuilder(CommandBuilder):
         self._build_package_scanner_argument()
         self._build_application_name_argument(configuration.application_name)
         if write_to_file:
-            self._write_script_to_file(deployment, configuration.start_script_filename)
+            self._write_script_to_file(deployment, configuration.start_script_filename, "echo -n 'Current directory is: '", "pwd", "ls *")
 
 
     def _build_memory_arguments(self, min_heap, max_heap):
@@ -134,7 +136,7 @@ class PlatformCommandBuilder(CommandBuilder):
 
     def _build_application_name_argument(self, application_name):
         self.add_argument("-DprocessName=%s", application_name)
-        self.add_argument('-cp "libs/*"')
+        self.add_argument('-cp \\"libs/*\\"')
         self.add_argument("com.redi.platform.launcher.application.LauncherMain")
         self.add_argument("%s.commands", application_name)
 
@@ -154,19 +156,15 @@ class DockerCommandBuilder(CommandBuilder):
     def do_build(self, deployment, write_to_file):
         configuration = deployment.docker_container_configuration
         self._start_script_filename = configuration.start_script_filename
-        self._build_working_directory(deployment.run_directory)
+        self._build_docker_base_arguments()
         self._build_image_name(deployment.stripe, deployment.application, deployment.instance)
         self._build_ports(configuration.ports)
         self._build_volumes(configuration.volumes)
 
-    def _build_working_directory(self, run_directory):
-        index = run_directory.find(os.getcwd())
-        if index >= 0:
-            run_directory = run_directory[len(os.getcwd()):]
-        self.add_argument("--workdir %s", run_directory)
+    def _build_docker_base_arguments(self):
+        self.add_argument("--detach")
 
     def _build_image_name(self, stripe, application, instance):
-        self.add_argument("--rm")
         self.add_argument("--name %s-%s-%s", application, stripe, instance)
 
     def _build_ports(self, ports):
@@ -183,8 +181,11 @@ class DockerCommandBuilder(CommandBuilder):
     def execute(self, runner):
         image = "%s:%s" % (runner.version_info['image_name'], runner.version_info['image_version'])
         self._pull_docker_image(image)
-        with run_in_directory(runner.deployment.run_directory):
-            return self._do_execute(self.command + [image, os.path.join('scripts', self.start_script_filename)])
+        run_directory = runner.run_directory
+        if runner.run_directory.startswith(os.getcwd()):
+            run_directory = run_directory[len(os.getcwd()):]
+        with run_in_directory(runner.run_directory):
+            return self._do_execute(self.command + ['--workdir', run_directory, image, os.path.join('scripts', self.start_script_filename)])
 
     def _pull_docker_image(self, image):
         return subprocess.run(['docker', 'pull', image], stderr=subprocess.STDOUT)
