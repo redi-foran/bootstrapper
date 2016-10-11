@@ -18,5 +18,5 @@ def add_command(run_command, deployment_loader):
     run_command.add_argument('--local', action='store_true', help='Use local directory for configuration for local development testing (skips validation)')
     run_command.add_argument('--skip-validation', action='store_false', help='Skips configuration validation')
     run_command.add_argument('--netinfo-url', default='http://netinfo.rdti.com', help='Used to determine environment and data center when not provided')
-    run_command.add_argument('--versions-url', default='http://nydevl0008.rdti.com:8081', help='Used to determine version info for docker image (if run in a container), application binary, and configuration')
+    run_command.add_argument('--deployments-url', default='http://nydevl0008.rdti.com:8081', help='Used to determine deployment info for docker image (if run in a container), application binary, and configuration')
     run_command.set_defaults(callback=deployment_runner.run)

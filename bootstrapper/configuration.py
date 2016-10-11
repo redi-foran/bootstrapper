@@ -70,7 +70,9 @@ class Configuration(dict):
 
     def _remove_unwanted_settings(self):
         all_keys = self._get_known_keys()
-        for key in all_keys:
+        if not all_keys:
+            return
+        for key in self.keys():
             if key not in self._get_known_keys():
                 del self[key]
 

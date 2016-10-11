@@ -40,7 +40,7 @@ class CommandBuilder(metaclass=ABCMeta):
         return self
 
     @abstractmethod
-    def do_build(self, deployment):
+    def do_build(self, deployment, write_to_file):
         raise NotImplemented()
 
     def add_argument(self, string_format, *format_values):

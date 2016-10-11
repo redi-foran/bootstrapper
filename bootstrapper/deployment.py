@@ -6,14 +6,18 @@ import stat
 from .configuration import PlatformJvmConfiguration, DockerContainerConfiguration
 from .properties import Properties, RAISE_ON_EXISTING, INSERT
 from .utils import copytree
-from .commands import PlatformCommandBuilder
+from .commands import CommandBuilder
 
 
 ENVIRONMENT_KEY='ENVIRONMENT'
 DATA_CENTER_KEY='DATA_CENTER'
+REMOTE_DATA_CENTER_KEY='REMOTE_DATA_CENTER'
 APPLICATION_KEY='APPLICATION'
 STRIPE_KEY='STRIPE'
 INSTANCE_KEY='INSTANCE'
+
+
+_REMOTE_DATA_CENTERS = {'AM1': 'AM2', 'AM2': 'AM1', 'EM1': 'EM2', 'EM2': 'EM1', 'AP1': 'AP2', 'AP2': 'AP1'}
 
 
 def _build_properties_from_files(properties, filenames, common_directory):
@@ -29,6 +33,7 @@ class Deployment(object):
         self._properties = Properties()
         self.properties.save(ENVIRONMENT_KEY, kwargs['environment'], behavior=RAISE_ON_EXISTING)
         self.properties.save(DATA_CENTER_KEY, kwargs['data_center'], behavior=RAISE_ON_EXISTING)
+        self.properties.save(REMOTE_DATA_CENTER_KEY, _REMOTE_DATA_CENTERS[kwargs['data_center']], behavior=RAISE_ON_EXISTING)
         self._common_dir = kwargs.get('common_dir', join('common', self.environment, self.data_center))
         self.properties.save(APPLICATION_KEY, kwargs['application'], behavior=RAISE_ON_EXISTING)
         _build_properties_from_files(self.properties,
@@ -131,3 +136,27 @@ class Deployment(object):
                     print("Failed while applying properties to line", line_no)
                     print("\t", line)
                     raise e
+
+
+class SequencerDeployment(Deployment):
+    class SequencerCommandsBuilder(object):
+        def build(self, deployment, write_to_file):
+            if not write_to_file:
+                return
+            config_directory = os.path.join(deployment.output_directory, 'config')
+            if not os.path.isdir(config_directory):
+                os.makedirs(config_directory)
+            with open(os.path.join(config_directory, 'sequencer.commands'), 'w') as commands_file:
+                commands_file.write("/launch TYPE=sequencer INSTANCE=SEQUENCER\n\n")
+
+        def _write_start(self, application, commands_file):
+            commands_file.write('/SEQUENCER/start URL="stream://%s" STREAM-ID="%s"\n')
+
+    def __init__(self, *args, **kwargs):
+        builders = kwargs.pop('builders', [])
+
+    @property
+    def sequencer_configuration(self):
+        if not hasattr(self, '_sequencer_configuration'):
+            self._sequencer_configuration = self._get_expanded_configuration(Configuration())
+        return self._sequencer_configuration

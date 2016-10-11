@@ -64,7 +64,7 @@ class DeploymentRunner(object):
     def run(self, args):
         self._args = args
         self._determine_location()
-        self._pull_version_info()
+        self._pull_deployment_info()
         with TemporaryDirectory() as self._source_directory_base:
             self._pull_configuration()
             self._generate_run_directory()
@@ -112,8 +112,8 @@ class DeploymentRunner(object):
         return os.path.join('deployments', self.deployment.environment, self.deployment.data_center, self.deployment.application, self.deployment.stripe, self.deployment.instance)
 
     @property
-    def version_info(self):
-        return self._version_info
+    def deployment_info(self):
+        return self._deployment_info
 
     def _remove_stale_paths(self):
         for path in os.listdir(self.run_directory):
@@ -141,13 +141,13 @@ class DeploymentRunner(object):
                 shutil.copy(source_pathname, target_pathname)
 
     @property
-    def _version_url(self):
-        return "%s/versions/%s/%s/%s/%s/%s.json" % (self._args.versions_url,
+    def _deployment_url(self):
+        return "%s/deployments/%s/%s/%s/%s/%s.json" % (self._args.deployments_url,
                 self.location.environment, self.location.data_center, self._args.application, self._args.stripe, self._args.instance)
 
-    def _pull_version_info(self):
-        with urllib.request.urlopen(self._version_url) as response:
-            self._version_info = json.loads(response.read().decode('utf-8'))
+    def _pull_deployment_info(self):
+        with urllib.request.urlopen(self._deployment_url) as response:
+            self._deployment_info = json.loads(response.read().decode('utf-8'))
 
     @property
     def _should_validate(self):
@@ -161,20 +161,20 @@ class DeploymentRunner(object):
     def _git_repository(self):
         if self._use_local_configuration:
             return os.getcwd()
-        return self.version_info['git_repository']
+        return self.deployment_info['git_repository']
 
     @property
     def _configuration_version(self):
-        return self.version_info['configuration_version']
+        return self.deployment_info['configuration_version']
 
     @property
     def _artifact_url(self):
-        return self.version_info['artifact_uri']
+        return self.deployment_info['artifact_uri']
 
     def _pull_package(self):
         if self._artifact_url is None:
             raise KeyError("Could not find artifact uri for package=%s, name=%s, version=%s" %
-                    (self.version_info['artifact_package'], self.version_info['artifact_name'], self.version_info['artifact_version']))
+                    (self.deployment_info['artifact_package'], self.deployment_info['artifact_name'], self.deployment_info['artifact_version']))
         with urllib.request.urlopen(self._artifact_url) as response, TemporaryFile(mode='w+b', suffix='tar') as f:
             f.write(response.read())
             f.seek(0)
