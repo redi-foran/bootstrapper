@@ -1,11 +1,11 @@
 import socket
-from .runner import DeploymentRunner, COMMAND_BUILDERS
-from bootstrapper import ENVIRONMENT_TABLE, DATA_CENTER_TABLE
+from .runner import runner
+from bootstrapper.location import ENVIRONMENT_TABLE, DATA_CENTER_TABLE
 
-__all__ = ['_add_command', COMMAND_BUILDERS]
+__all__ = ['_add_command']
 
 def add_command(run_command, deployment_loader):
-    deployment_runner = DeploymentRunner(deployment_loader)
+    runner._load_deployments = deployment_loader
     location_group = run_command.add_mutually_exclusive_group()
     location_group.add_argument('--hostname', help='Used to determine environment and data center (preferred method if provided)')
     dce_group = location_group.add_argument_group()
@@ -14,9 +14,9 @@ def add_command(run_command, deployment_loader):
     run_command.add_argument('--application', '-a', required=True)
     run_command.add_argument('--stripe', '-s', required=True)
     run_command.add_argument('--instance', '-i', required=True)
-    run_command.add_argument('--mode', '-m', choices=set(COMMAND_BUILDERS.keys()), default='docker-container')
+    run_command.add_argument('--mode', '-m', choices=set(runner.command_builders), default='docker-container')
     run_command.add_argument('--local', action='store_true', help='Use local directory for configuration for local development testing (skips validation)')
     run_command.add_argument('--skip-validation', action='store_false', help='Skips configuration validation')
     run_command.add_argument('--netinfo-url', default='http://netinfo.rdti.com', help='Used to determine environment and data center when not provided')
     run_command.add_argument('--deployments-url', default='http://nydevl0008.rdti.com:8081', help='Used to determine deployment info for docker image (if run in a container), application binary, and configuration')
-    run_command.set_defaults(callback=deployment_runner.run)
+    run_command.set_defaults(callback=runner.run)

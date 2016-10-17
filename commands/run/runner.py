@@ -1,15 +1,9 @@
-from bootstrapper import Location, ENVIRONMENT_TABLE, DATA_CENTER_TABLE, DockerCommandBuilder, PlatformCommandBuilder, RUN_DIRECTORY_KEY
-import os
-import subprocess
-import shutil
+from bootstrapper import RUN_DIRECTORY_KEY
+from bootstrapper.location import Location, ENVIRONMENT_TABLE, DATA_CENTER_TABLE
+from bootstrapper.commands import CommandBuilder, DockerCommandBuilder, PlatformCommandBuilder
 from tempfile import TemporaryDirectory, TemporaryFile
 from contextlib import contextmanager
-import tarfile
-import http.client
-import urllib.parse
-import urllib.request
-import json
-import socket
+import os, subprocess, shutil, tarfile, http.client, urllib.parse, urllib.request, json, socket
 
 _DOCKER_CONTAINER = 'docker-container'
 _PLATFORM_JVM = 'platform-jvm'
@@ -52,14 +46,10 @@ def _change_directory(directory):
         os.chdir(current_dir)
 
 
-COMMAND_BUILDERS = {
-        _DOCKER_CONTAINER: DockerCommandBuilder,
-        _PLATFORM_JVM: PlatformCommandBuilder }
-
-
 class DeploymentRunner(object):
-    def __init__(self, deployment_loader):
-        self._load_deployments = deployment_loader
+    def __init__(self):
+        self._command_builders = {}
+        self._load_deployments = None
 
     def run(self, args):
         self._args = args
@@ -71,6 +61,17 @@ class DeploymentRunner(object):
             self._pull_package()
             self._populate_run_directory()
         result = self._execute()
+
+    def add_command_builder(self, name, builder):
+        if not issubclass(builder, CommandBuilder):
+            raise TypeError("builder must be a CommandBuilder")
+        elif name in self._command_builders:
+            raise KeyError("Builder for '%s' already exists" % name)
+        self._command_builders[name] = builder
+
+    @property
+    def command_builders(self):
+        return self._command_builders.keys()
 
     def _determine_location(self):
         hostname = getattr(self._args, 'hostname', None)
@@ -235,6 +236,10 @@ class DeploymentRunner(object):
                 raise AssertionError("Configuration validation has failed because the following files are not the same as versioned:\n%s" % result.stdout)
 
     def _execute(self):
-        command_builder = COMMAND_BUILDERS[self._args.mode]()
+        command_builder = self._command_builders[self._args.mode]()
         command_builder.build(self.deployment, write_to_file=False)
         return command_builder.execute(self)
+
+runner = DeploymentRunner()
+runner.add_command_builder(_DOCKER_CONTAINER, DockerCommandBuilder)
+runner.add_command_builder(_PLATFORM_JVM, PlatformCommandBuilder)

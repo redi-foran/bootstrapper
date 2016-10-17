@@ -1,9 +1,5 @@
-import json
-import importlib.util
-import os.path
-import os
-import shutil
-from bootstrapper import Deployment
+import json, importlib.util, os.path, os, shutil
+from bootstrapper.deployment import Deployment
 
 
 _DEPLOY_PY = 'deploy.py'
@@ -23,7 +19,24 @@ def _load_deployments_from_json(directory):
 
 
 def _load_deployments_from_directory(directory):
-    pass
+    deployments = []
+    for environment in os.listdir(os.path.join(directory, 'common')):
+        for data_center in os.listdir(os.path.join(directory, 'common', environment)):
+            properties = []
+            for properties_file in os.listdir(os.path.join(directory, 'common', environment, data_center)):
+                if properties_file.endswith(".properties"):
+                    properties.append(os.path.join(directory, 'common', environment, data_center, properties_file))
+            for application in os.listdir(os.path.join(directory, 'overrides')):
+                for stripe in os.listdir(os.path.join(directory, 'overrides', application)):
+                    for instance in os.listdir(os.path.join(directory, 'overrides', application, stripe)):
+                        deployments.append(Deployment(
+                            environment=environment,
+                            data_center=data_center,
+                            application=application,
+                            stripe=stripe,
+                            instance=instance,
+                            properties=properties))
+    return deployments
 
 
 def _load_deployments(directory=os.getcwd()):
