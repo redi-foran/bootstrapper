@@ -181,6 +181,24 @@ class CommanderCommandsFileBuilder(StreamBuilder):
         return lines
 
 
+class StashCommandsFileBuilder(StreamBuilder):
+    def _get_lines(self):
+        lines = []
+        lines.append('/launch TYPE=rewinder INSTANCE=STASH')
+        lines.append('/STASH/start URL="stream://${%s}"' % APPLICATION_KEY)
+        lines.append('/STASH/addServer NAME="STASH_FILE" URL="stash://$YYYY$MM$DD-$S.messages.gz"')
+        return lines
+
+
+class RewinderCommandsFileBuilder(StreamBuilder):
+    def _get_lines(self):
+        lines = []
+        lines.append('/launch TYPE=rewinder INSTANCE=STASH')
+        lines.append('/STASH/start URL="stream://${%s}"' % APPLICATION_KEY)
+        lines.append('/STASH/addServer NAME="TCP_SERVER" URL="beam://0.0.0.0:18021?discoveryId=app-rewind"')
+        return lines
+
+
 class PlatformCommandBuilder(CommandBuilder, StreamBuilder):
     def __init__(self, text_admin_port=0):
         if text_admin_port < 0:

@@ -1,3 +1,3 @@
 from .docker import DockerCommandBuilder
-from .platform import PlatformCommandBuilder, StreamFileBuilder, SequencerCommandsFileBuilder, CommanderCommandsFileBuilder
+from .platform import PlatformCommandBuilder, StreamFileBuilder, SequencerCommandsFileBuilder, CommanderCommandsFileBuilder, StashCommandsFileBuilder, RewinderCommandsFileBuilder
 from .builder import CommandBuilder
