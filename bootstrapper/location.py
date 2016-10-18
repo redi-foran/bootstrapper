@@ -1,4 +1,5 @@
 import socket
+from . import logger
 
 
 DATA_CENTER_TABLE = {
@@ -47,9 +48,9 @@ def _validate_args(kwargs):
 def _safe_get_value(key, table, hostname, setting):
     try:
         return table[key]
-    except KeyError as e:
-        print("Failed to set %s from hostname '%s' because '%s' is not a valid value." % (setting, hostname, key), "Valid values are:", "[%s]" % ", ".join(table.keys()))
-        raise e
+    except KeyError:
+        logger.exception("Failed to set %s from hostname '%s' because '%s' is not a valid value.", setting, hostname, key), "Valid values are:", "[%s]" % ", ".join(table.keys())
+        raise
 
 
 class Location(object):

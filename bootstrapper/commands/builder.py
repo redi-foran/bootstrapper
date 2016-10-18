@@ -1,9 +1,7 @@
+from .. import logger
 from abc import ABCMeta, abstractmethod
 from contextlib import contextmanager
-import os
-import stat
-import subprocess
-import shlex
+import os, stat, subprocess, shlex
 
 
 @contextmanager
@@ -76,7 +74,7 @@ class CommandBuilder(Builder, metaclass=ABCMeta):
         raise NotImplemented()
 
     def _do_execute(self, command):
-        print("Running:", " ".join(command))
+        logger.info("Running: %s", " ".join(command))
         return subprocess.run(command, stderr=subprocess.STDOUT)
 
 
@@ -85,4 +83,4 @@ if __name__ == "__main__":
     javaBuilder = PlatformCommandBuilder()
     configuration = Configuration({'vmArgs': {'remoteDebug': {'args': '-agentlib:jdwp=transport=dt_socket,server=y,suspend=n', 'enabled': True}, 'connections': {'status': 'pulse://239.100.103.13:18013?ifName=lo', 'discovery': 'discovery://239.100.103.14:18014?ifName=lo'}, 'textAdmin': 1501, 'log': {'syslog': {'enabled': False}, 'udp': {'enabled': 'True', 'target': '10.160.10.182', 'port': 9475}, 'console': {'enabled': True}, 'file': {'enabled': False, 'target': 'messages.log'}}, 'platform': {'logPath': 'logs', 'configPath': 'config', 'dataPath': 'data'}, 'appName': 'OMS01-enrichment-agent', 'memory': {'minHeap': '2g', 'maxHeap': '3g'}, 'baseArgs': ['-server', '-XX:+UseCompressedOops', '-XX:+UseG1GC', '-XX:MaxGCPauseMillis=100', '-verbose:gc']}})
     javaBuilder.build(configuration)
-    print(javaBuilder)
+    logger.info(javaBuilder)

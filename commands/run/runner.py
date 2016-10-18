@@ -84,9 +84,9 @@ class DeploymentRunner(object):
                 with urllib.request.urlopen(url) as response:
                     netinfo = json.loads(response.read().decode('utf-8'))['netinfo']
                     if isinstance(netinfo, str):
-                        print(netinfo, "Defaulting to environment=dev, data_center=AM1")
                         environment = 'dev'
                         data_center = 'AM1'
+                        logger.warning("%s. Defaulting to environment=%s, data_center=%s", netinfo, environment, data_center)
                     else:
                         environment = netinfo.get('state', 'dev').lower()
                         if environment == 'uat':

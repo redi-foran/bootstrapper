@@ -21,7 +21,7 @@ class DeploymentGenerator(object):
 
     def run(self, args):
         if not os.path.isdir(args.path):
-            raise Exception("bar")
+            raise NotADirectoryError("Directory '%s' does not exist." % args.path)
 
         if os.path.isdir(os.path.join(args.path, 'deployments')):
             shutil.rmtree(os.path.join(args.path, 'deployments'))

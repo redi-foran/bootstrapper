@@ -134,7 +134,7 @@ class Deployment(object):
                 try:
                     dst.write(self.properties.apply_to_value(line))
                     line_no += 1
-                except KeyError as e:
+                except KeyError:
                     logger.error("Failed to copy %s to %s", source, destination)
                     logger.exception("Failed while applying properties to line %d\n\t%s", line_no, line)
-                    raise e
+                    raise

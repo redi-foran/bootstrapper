@@ -47,13 +47,14 @@ def _load_deployments(directory=os.getcwd()):
     elif os.path.isdir(os.path.join(directory, 'common')) and os.path.isdir(os.path.join(directory, 'overrides')):
         return _load_deployments_from_directory(directory)
     else:
-        raise Exception("foo")
+        raise RuntimeError("Could not load a deployments the bootstrapper could not find either '%s', '%s', or 'common' and 'overrides' directories." % (_DEPLOY_PY, _DEPLOY_JSON))
 
 
 def _load_deployment_module(directory=os.getcwd()):
-    spec = importlib.util.spec_from_file_location('deploy', os.path.join(directory, _DEPLOY_PY))
+    deploy_py_filename = os.path.join(directory, _DEPLOY_PY)
+    spec = importlib.util.spec_from_file_location('deploy', deploy_py_filename)
     if spec is None:
-        raise Exception("blah")
+        raise Exception("Found '%s' but failed to load module", deploy_py_filename)
 
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
