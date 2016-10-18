@@ -170,7 +170,7 @@ class DeploymentRunner(object):
 
     @property
     def _artifact_url(self):
-        return self.deployment_info['artifact_uri']
+        return self.deployment_info['artifact_download_url']
 
     def _pull_package(self):
         if self._artifact_url is None:
