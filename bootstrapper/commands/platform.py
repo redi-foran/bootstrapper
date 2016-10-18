@@ -115,6 +115,7 @@ class StreamBuilder(Builder):
         properties.save(MC_DISCOVERY_KEY, "discovery://239.${%s}.${%s}${%s}.${%s}4:${%s}?ifName=${%s}" %
                 (MC_REGION_KEY, MC_DATA_CENTER_KEY, MC_ENVIRONMENT_KEY, MC_APPLICATION_ID_KEY, MC_DISCOVERY_PORT_KEY, MC_DISCOVERY_IFNAME_KEY), behavior=INSERT)
 
+        properties.save(MC_REWINDER_PORT_KEY, 15004, behavior=INSERT)
         properties.save(MC_REGION_KEY, _MC_LOCATIONS[properties[DATA_CENTER_KEY]][0], behavior=INSERT)
         properties.save(MC_DATA_CENTER_KEY, _MC_LOCATIONS[properties[DATA_CENTER_KEY]][1], behavior=INSERT)
         properties.save(MC_ENVIRONMENT_KEY, _MC_ENVIRONMENTS[properties[ENVIRONMENT_KEY]], behavior=INSERT)
@@ -195,7 +196,7 @@ class RewinderCommandsFileBuilder(StreamBuilder):
         lines = []
         lines.append('/launch TYPE=rewinder INSTANCE=STASH')
         lines.append('/STASH/start URL="stream://${%s}"' % APPLICATION_KEY)
-        lines.append('/STASH/addServer NAME="TCP_SERVER" URL="beam://0.0.0.0:18021?discoveryId=app-rewind"')
+        lines.append('/STASH/addServer NAME="TCP_SERVER" URL="beam://0.0.0.0:${%s}?discoveryId=app-rewind"' % MC_REWINDER_PORT_KEY)
         return lines
 
 
